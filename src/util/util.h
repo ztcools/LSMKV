@@ -33,6 +33,26 @@ void PutVarint32(std::string* dst, uint32_t value);
 void PutVarint64(std::string* dst, uint64_t value);
 void PutLengthPrefixedSlice(std::string* dst, const Slice& value);
 
+inline void EncodeFixed32(char* buf, uint32_t value) {
+  memcpy(buf, &value, sizeof(value));
+}
+
+inline void EncodeFixed64(char* buf, uint64_t value) {
+  memcpy(buf, &value, sizeof(value));
+}
+
+inline uint32_t DecodeFixed32(const char* buf) {
+  uint32_t result;
+  memcpy(&result, buf, sizeof(result));
+  return result;
+}
+
+inline uint64_t DecodeFixed64(const char* buf) {
+  uint64_t result;
+  memcpy(&result, buf, sizeof(result));
+  return result;
+}
+
 bool GetFixed32(Slice* input, uint32_t* value);
 bool GetFixed64(Slice* input, uint64_t* value);
 bool GetVarint32(Slice* input, uint32_t* value);

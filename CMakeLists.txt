@@ -37,6 +37,10 @@ set(SRC_FILES
   src/util/slice.cc
   src/util/arena.cc
   src/util/util.cc
+  src/memtable/write_batch.cc
+  src/memtable/memtable.cc
+  src/memtable/immutable_memtable.cc
+  src/wal/wal.cc
 )
 
 add_library(lsm STATIC ${SRC_FILES})
