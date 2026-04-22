@@ -44,6 +44,7 @@ set(SRC_FILES
   src/sstable/block.cc
   src/sstable/table_builder.cc
   src/sstable/table.cc
+  src/version/version.cc
 )
 
 add_library(lsm STATIC ${SRC_FILES})
