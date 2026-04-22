@@ -77,30 +77,34 @@ const char* Block::RestartPoint(uint32_t index) const {
   return p + util::DecodeFixed32(p + (num_restarts - index - 1) * 4 + size_ - 4 * (num_restarts + 1));
 }
 
-// ========== Block::Iterator ==========
-Block::Iterator::Iterator(const Block* block)
+std::unique_ptr<Iterator> Block::NewIterator() {
+  return std::make_unique<BlockIterator>(this);
+}
+
+// ========== BlockIterator ==========
+BlockIterator::BlockIterator(const Block* block)
     : block_(block), data_end_(block->decompressed_ ? block->decompressed_ + block->decompressed_size_ : block->data_ + block->size_),
       current_(nullptr), restart_index_(0), status_(Status::OK()) {}
 
-bool Block::Iterator::Valid() const {
+bool BlockIterator::Valid() const {
   return current_ != nullptr;
 }
 
-Slice Block::Iterator::key() const {
+Slice BlockIterator::key() const {
   assert(Valid());
   return Slice(key_);
 }
 
-Slice Block::Iterator::value() const {
+Slice BlockIterator::value() const {
   assert(Valid());
   return value_;
 }
 
-void Block::Iterator::SeekToFirst() {
+void BlockIterator::SeekToFirst() {
   Seek(Slice(""));
 }
 
-void Block::Iterator::SeekToLast() {
+void BlockIterator::SeekToLast() {
   uint32_t num_restarts = block_->NumRestarts();
   if (num_restarts == 0) {
     current_ = nullptr;
@@ -116,7 +120,7 @@ void Block::Iterator::SeekToLast() {
   ParseNextKey();
 }
 
-void Block::Iterator::Seek(const Slice& target) {
+void BlockIterator::Seek(const Slice& target) {
   // 二分查找找到合适的 restart point
   restart_index_ = BinarySearchIndex(target);
 
@@ -132,7 +136,7 @@ void Block::Iterator::Seek(const Slice& target) {
   current_ = nullptr;
 }
 
-uint32_t Block::Iterator::BinarySearchIndex(const Slice& target) {
+uint32_t BlockIterator::BinarySearchIndex(const Slice& target) {
   uint32_t left = 0;
   uint32_t right = block_->NumRestarts() - 1;
 
@@ -154,12 +158,12 @@ uint32_t Block::Iterator::BinarySearchIndex(const Slice& target) {
   return left;
 }
 
-void Block::Iterator::Next() {
+void BlockIterator::Next() {
   assert(Valid());
   ParseNextKey();
 }
 
-void Block::Iterator::Prev() {
+void BlockIterator::Prev() {
   assert(Valid());
 
   // 先回到前一个 restart point
@@ -193,7 +197,7 @@ void Block::Iterator::Prev() {
   } while (true);
 }
 
-bool Block::Iterator::ParseNextKey() {
+bool BlockIterator::ParseNextKey() {
   const char* p = current_;
   const char* limit = data_end_;
 
@@ -260,7 +264,7 @@ size_t BlockBuilder::CurrentSizeEstimate() const {
 void BlockBuilder::Add(const Slice& key, const Slice& value) {
   Slice last_key_slice(last_key_);
   assert(!finished_);
-  assert(counter_ <= static_cast<int>(block_restart_interval_));
+  assert(counter_ <= block_restart_interval_);
 
   size_t shared = 0;
   if (static_cast<size_t>(counter_) < block_restart_interval_) {
@@ -300,11 +304,8 @@ Slice BlockBuilder::Finish() {
   return Slice(buffer_);
 }
 
-// ========== FilterBlockBuilder ==========
-FilterBlockBuilder::FilterBlockBuilder() = default;
-FilterBlockBuilder::~FilterBlockBuilder() = default;
-
-void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
+// ========== FilterBlockWriter ==========
+void FilterBlockWriter::StartBlock(uint64_t block_offset) {
   // 为新的 block 准备
   uint64_t filter_index = (block_offset / 2048);  // 每 2KB 一个 filter
   assert(filter_index >= filter_offsets_.size());
@@ -313,12 +314,12 @@ void FilterBlockBuilder::StartBlock(uint64_t block_offset) {
   }
 }
 
-void FilterBlockBuilder::AddKey(const Slice& key) {
+void FilterBlockWriter::AddKey(const Slice& key) {
   key_offsets_.push_back(keys_.size());
   keys_.append(key.data(), key.size());
 }
 
-Slice FilterBlockBuilder::Finish() {
+Slice FilterBlockWriter::Finish() {
   if (!key_offsets_.empty()) {
     GenerateFilter();
   }
@@ -335,7 +336,7 @@ Slice FilterBlockBuilder::Finish() {
   return Slice(result_);
 }
 
-void FilterBlockBuilder::GenerateFilter() {
+void FilterBlockWriter::GenerateFilter() {
   const size_t num_keys = key_offsets_.size();
   if (num_keys == 0) {
     filter_offsets_.push_back(result_.size());
@@ -375,7 +376,7 @@ FilterBlockReader::FilterBlockReader(const Slice& contents)
   num_ = (n - 5 - last_word) / 4;
 }
 
-FilterBlockReader::~FilterBlockReader() = default;
+
 
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
   (void)key;

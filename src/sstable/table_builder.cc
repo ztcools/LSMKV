@@ -84,8 +84,8 @@ Status TableBuilder::WriteRawBlock(const Slice& raw, CompressionType compression
   util::EncodeFixed32(trailer + 1, crc);
   file_.write(trailer, 5);
 
-  handle->set_offset(offset_);
-  handle->set_size(contents.size());
+  handle->offset = offset_;
+  handle->size = contents.size();
   offset_ += contents.size() + 5;
   return Status::OK();
 }

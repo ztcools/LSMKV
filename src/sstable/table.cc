@@ -165,10 +165,10 @@ Status Table::Open(const Options& options, const std::string& filename,
     s = tmp_table->ReadRawBlock(footer.metaindex_handle, &contents, &type);
     if (s.ok()) {
       Block meta_block(contents.data(), contents.size(), type != kNoCompression, type);
-      Block::Iterator iter(&meta_block);
-      for (iter.SeekToFirst(); iter.Valid(); iter.Next()) {
-        Slice key = iter.key();
-        Slice value = iter.value();
+      auto iter = meta_block.NewIterator();
+      for (iter->SeekToFirst(); iter->Valid(); iter->Next()) {
+        Slice key = iter->key();
+        Slice value = iter->value();
         if (key.starts_with("filter.")) {
           BlockHandle handle;
           Slice input = value;
@@ -273,13 +273,13 @@ Status Table::ReadBlock(const ReadOptions& options, const BlockHandle& handle,
 
 Status Table::Get(const ReadOptions& options, const Slice& key,
                   std::string* value) {
-  Block::Iterator iiter(index_block_.get());
-  iiter.Seek(key);
-  if (!iiter.Valid()) {
+  auto iiter = index_block_->NewIterator();
+  iiter->Seek(key);
+  if (!iiter->Valid()) {
     return Status::NotFound("");
   }
 
-  Slice handle_value = iiter.value();
+  Slice handle_value = iiter->value();
   BlockHandle handle;
   Slice input = handle_value;
   Status s = handle.DecodeFrom(&input);
@@ -298,10 +298,10 @@ Status Table::Get(const ReadOptions& options, const Slice& key,
     return s;
   }
 
-  Block::Iterator iter(block.get());
-  iter.Seek(key);
-  if (iter.Valid() && iter.key().compare(key) == 0) {
-    *value = std::string(iter.value().data(), iter.value().size());
+  auto iter = block->NewIterator();
+  iter->Seek(key);
+  if (iter->Valid() && iter->key().compare(key) == 0) {
+    *value = std::string(iter->value().data(), iter->value().size());
     return Status::OK();
   } else {
     return Status::NotFound("");
@@ -313,13 +313,13 @@ bool Table::KeyMayMatch(const Slice& key) {
     return true;
   }
 
-  Block::Iterator iiter(index_block_.get());
-  iiter.Seek(key);
-  if (!iiter.Valid()) {
+  auto iiter = index_block_->NewIterator();
+  iiter->Seek(key);
+  if (!iiter->Valid()) {
     return true;
   }
 
-  Slice handle_value = iiter.value();
+  Slice handle_value = iiter->value();
   BlockHandle handle;
   Slice input = handle_value;
   if (!handle.DecodeFrom(&input).ok()) {
@@ -329,10 +329,10 @@ bool Table::KeyMayMatch(const Slice& key) {
 }
 
 uint64_t Table::ApproximateOffsetOf(const Slice& key) {
-  Block::Iterator iiter(index_block_.get());
-  iiter.Seek(key);
-  if (iiter.Valid()) {
-    Slice handle_value = iiter.value();
+  auto iiter = index_block_->NewIterator();
+  iiter->Seek(key);
+  if (iiter->Valid()) {
+    Slice handle_value = iiter->value();
     BlockHandle handle;
     Slice input = handle_value;
     if (handle.DecodeFrom(&input).ok()) {
@@ -342,29 +342,29 @@ uint64_t Table::ApproximateOffsetOf(const Slice& key) {
   return file_size_;
 }
 
-// ========== Table::Iterator ==========
-Table::Iterator::Iterator(const Table* table, const ReadOptions& options)
+// ========== TableIterator ==========
+TableIterator::TableIterator(const Table* table, const ReadOptions& options)
     : table_(table), options_(options),
-      index_iter_(std::make_unique<Block::Iterator>(table->index_block_.get())),
+      index_iter_(table->index_block_->NewIterator()),
       data_iter_(nullptr) {}
 
-Table::Iterator::~Iterator() = default;
+TableIterator::~TableIterator() = default;
 
-bool Table::Iterator::Valid() const {
+bool TableIterator::Valid() const {
   return data_iter_ != nullptr && data_iter_->Valid();
 }
 
-Slice Table::Iterator::key() const {
+Slice TableIterator::key() const {
   assert(Valid());
   return data_iter_->key();
 }
 
-Slice Table::Iterator::value() const {
+Slice TableIterator::value() const {
   assert(Valid());
   return data_iter_->value();
 }
 
-Status Table::Iterator::status() const {
+Status TableIterator::status() const {
   if (!status_.ok()) {
     return status_;
   }
@@ -374,12 +374,12 @@ Status Table::Iterator::status() const {
   return index_iter_->status();
 }
 
-void Table::Iterator::SeekToFirst() {
+void TableIterator::SeekToFirst() {
   index_iter_->SeekToFirst();
   SetDataBlock();
 }
 
-void Table::Iterator::SeekToLast() {
+void TableIterator::SeekToLast() {
   index_iter_->SeekToLast();
   SetDataBlock();
   if (data_iter_) {
@@ -387,7 +387,7 @@ void Table::Iterator::SeekToLast() {
   }
 }
 
-void Table::Iterator::Seek(const Slice& target) {
+void TableIterator::Seek(const Slice& target) {
   index_iter_->Seek(target);
   SetDataBlock();
   if (data_iter_) {
@@ -395,7 +395,7 @@ void Table::Iterator::Seek(const Slice& target) {
   }
 }
 
-void Table::Iterator::SetDataBlock() {
+void TableIterator::SetDataBlock() {
   if (!index_iter_->Valid()) {
     data_iter_.reset();
     return;
@@ -420,10 +420,10 @@ void Table::Iterator::SetDataBlock() {
   }
 
   data_block_key_ = std::string(index_iter_->key().data(), index_iter_->key().size());
-  data_iter_ = std::make_unique<Block::Iterator>(block.get());
+  data_iter_ = block->NewIterator();
 }
 
-void Table::Iterator::Next() {
+void TableIterator::Next() {
   assert(Valid());
   data_iter_->Next();
   if (!data_iter_->Valid()) {
@@ -431,7 +431,7 @@ void Table::Iterator::Next() {
   }
 }
 
-void Table::Iterator::NextIndex() {
+void TableIterator::NextIndex() {
   index_iter_->Next();
   SetDataBlock();
   if (data_iter_) {
@@ -439,7 +439,7 @@ void Table::Iterator::NextIndex() {
   }
 }
 
-void Table::Iterator::Prev() {
+void TableIterator::Prev() {
   assert(Valid());
   data_iter_->Prev();
   if (!data_iter_->Valid()) {
@@ -452,8 +452,8 @@ void Table::Iterator::Prev() {
   }
 }
 
-Table::Iterator* Table::NewIterator(const ReadOptions& options) {
-  return new Iterator(this, options);
+std::unique_ptr<Iterator> Table::NewIterator(const ReadOptions& options) {
+  return std::make_unique<TableIterator>(this, options);
 }
 
 }  // namespace lsm

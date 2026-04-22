@@ -40,7 +40,7 @@ class TableBuilder {
   std::string last_key_;
   uint64_t num_entries_;
 
-  FilterBlockBuilder filter_block_;
+  FilterBlockWriter filter_block_;
 
   std::string compressed_output_;
   Status status_;

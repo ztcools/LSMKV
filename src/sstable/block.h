@@ -6,8 +6,11 @@
 #include <memory>
 #include "../util/slice.h"
 #include "../util/status.h"
+#include "../util/iterator.h"
 
 namespace lsm {
+
+static const uint64_t kTableMagicNumber = 0x57fb088b46db80e8ULL;
 
 // 压缩类型
 enum CompressionType {
@@ -27,79 +30,80 @@ struct Options {
 // Block句柄（位置 + 大小）
 struct BlockHandle {
   static const size_t kMaxEncodedLength = 10 + 10;
-  uint64_t offset;
-  uint64_t size;
 
   BlockHandle() : offset(0), size(0) {}
-  BlockHandle(uint64_t off, uint64_t sz) : offset(off), size(sz) {}
-
-  void set_offset(uint64_t off) { offset = off; }
-  void set_size(uint64_t sz) { size = sz; }
+  BlockHandle(uint64_t offset, uint64_t size) : offset(offset), size(size) {}
 
   void EncodeTo(std::string* dst) const;
   Status DecodeFrom(Slice* input);
+
+  uint64_t offset;
+  uint64_t size;
 };
 
-// Footer：固定大小，定位元数据
-// 格式：[meta index handle][index handle][padding][magic]
+// 文件尾，包含：
+// - Metaindex Block 的 BlockHandle
+// - Index Block 的 BlockHandle
 struct Footer {
-  static const uint64_t kTableMagicNumber = 0xbc9f1d34;
   static const size_t kEncodedLength = 2 * BlockHandle::kMaxEncodedLength + 8;
+
+  void EncodeTo(std::string* dst) const;
+  Status DecodeFrom(Slice* input);
 
   BlockHandle metaindex_handle;
   BlockHandle index_handle;
-
-  void EncodeTo(std::string* dst) const;
-  Status DecodeFrom(Slice* input);
 };
 
-// Block：通用数据块
+// 数据块
 class Block {
  public:
-  explicit Block(const char* data, size_t size, bool compressed = false,
-                 CompressionType type = kNoCompression);
-  ~Block();
+  // 注意：Block 不会持有 data 的所有权
+  // data 必须比 Block 生命周期更长
+  Block(const char* data, size_t size, bool compressed = false,
+        CompressionType type = kNoCompression);
 
+  // 禁止拷贝
   Block(const Block&) = delete;
   Block& operator=(const Block&) = delete;
 
-  size_t size() const { return size_; }
-  const char* data() const { return data_; }
+  ~Block();
 
-  class Iterator;
-  Iterator* NewIterator() const;
+  const char* data() const { return data_; }
+  size_t size() const { return size_; }
+
+  // 迭代器
+  std::unique_ptr<Iterator> NewIterator();
 
  private:
-  friend class Block::Iterator;
-  friend class TwoLevelIterator;
+  friend class BlockIterator;
+
+  uint32_t NumRestarts() const;
+  const char* RestartPoint(uint32_t index) const;
 
   const char* data_;
   size_t size_;
   bool compressed_;
   CompressionType compression_type_;
-  const char* decompressed_;
+  char* decompressed_;
   size_t decompressed_size_;
-
-  uint32_t NumRestarts() const;
-  const char* RestartPoint(uint32_t index) const;
 };
 
 // Block迭代器
-class Block::Iterator {
+class BlockIterator : public Iterator {
  public:
-  explicit Iterator(const Block* block);
+  explicit BlockIterator(const Block* block);
 
-  bool Valid() const;
-  Slice key() const;
-  Slice value() const;
+  bool Valid() const override;
+  Slice key() const override;
+  Slice value() const override;
 
-  void Seek(const Slice& target);
-  void SeekToFirst();
-  void SeekToLast();
-  void Next();
-  void Prev();
+  void Seek(const Slice& target) override;
+  void SeekToFirst() override;
+  void SeekToLast() override;
+  void Next() override;
+  void Prev() override;
 
-  Status status() const { return status_; }
+  Status status() const override { return status_; }
 
  private:
   const Block* block_;
@@ -139,18 +143,30 @@ class BlockBuilder {
   std::string buffer_;
   std::vector<uint32_t> restarts_;
   std::string last_key_;
-  int counter_;
+  uint32_t counter_;
   bool finished_;
 };
 
-// 过滤器块构建器（BloomFilter）
-class FilterBlockBuilder {
+// 过滤器块读写
+class FilterBlockReader {
  public:
-  FilterBlockBuilder();
-  ~FilterBlockBuilder();
+  FilterBlockReader(const Slice& data);
 
-  FilterBlockBuilder(const FilterBlockBuilder&) = delete;
-  FilterBlockBuilder& operator=(const FilterBlockBuilder&) = delete;
+  bool KeyMayMatch(uint64_t block_offset, const Slice& key);
+
+ private:
+  const char* data_;
+  size_t size_;
+  const char* filter_data_;
+  const char* offset_;
+  uint32_t num_;
+  uint32_t base_lg_;
+};
+
+class FilterBlockWriter {
+ public:
+  FilterBlockWriter() = default;
+  ~FilterBlockWriter() = default;
 
   void StartBlock(uint64_t block_offset);
   void AddKey(const Slice& key);
@@ -158,30 +174,12 @@ class FilterBlockBuilder {
 
  private:
   void GenerateFilter();
-
-  const size_t kBitsPerKey = 10;
+  
   std::string keys_;
-  std::vector<size_t> key_offsets_;
   std::string result_;
+  std::vector<uint32_t> key_offsets_;
   std::vector<uint32_t> filter_offsets_;
-};
-
-// 过滤器块读取器
-class FilterBlockReader {
- public:
-  explicit FilterBlockReader(const Slice& contents);
-  ~FilterBlockReader();
-
-  FilterBlockReader(const FilterBlockReader&) = delete;
-  FilterBlockReader& operator=(const FilterBlockReader&) = delete;
-
-  bool KeyMayMatch(uint64_t block_offset, const Slice& key);
-
- private:
-  const char* data_;
-  const char* offset_;
-  size_t num_;
-  size_t base_lg_;
+  uint64_t last_block_offset_;
 };
 
 }  // namespace lsm

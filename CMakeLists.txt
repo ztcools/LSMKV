@@ -45,6 +45,8 @@ set(SRC_FILES
   src/sstable/table_builder.cc
   src/sstable/table.cc
   src/version/version.cc
+  src/compaction/merge_iterator.cc
+  src/compaction/compaction.cc
 )
 
 add_library(lsm STATIC ${SRC_FILES})

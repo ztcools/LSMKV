@@ -8,6 +8,7 @@
 #include <unordered_map>
 #include "../util/slice.h"
 #include "../util/status.h"
+#include "../util/iterator.h"
 #include "block.h"
 
 namespace lsm {
@@ -16,6 +17,8 @@ struct ReadOptions {
   bool verify_checksums = false;
   bool fill_cache = true;
 };
+
+class Block;
 
 // 简单的 Block 缓存（LRU）
 class BlockCache {
@@ -53,8 +56,7 @@ class Table {
   Status Get(const ReadOptions& options, const Slice& key, std::string* value);
 
   // 范围迭代
-  class Iterator;
-  Iterator* NewIterator(const ReadOptions& options);
+  std::unique_ptr<Iterator> NewIterator(const ReadOptions& options);
 
   // 检查 Key 是否可能存在
   bool KeyMayMatch(const Slice& key);
@@ -62,7 +64,7 @@ class Table {
   uint64_t ApproximateOffsetOf(const Slice& key);
 
  private:
-  friend class Table::Iterator;
+  friend class TableIterator;
 
   Table(const Options& options, const std::string& filename,
         std::unique_ptr<FilterBlockReader> filter,
@@ -70,9 +72,9 @@ class Table {
         std::unique_ptr<BlockCache> cache);
 
   Status ReadBlock(const ReadOptions& options, const BlockHandle& handle,
-                   std::unique_ptr<Block>* block) const;
+                       std::unique_ptr<Block>* block) const;
   Status ReadRawBlock(const BlockHandle& handle, Slice* content,
-                      CompressionType* type) const;
+                          CompressionType* type) const;
 
   const Options options_;
   const std::string filename_;
@@ -85,22 +87,22 @@ class Table {
 };
 
 // 两阶段迭代器：先查 index，再查 data
-class Table::Iterator {
+class TableIterator : public Iterator {
  public:
-  Iterator(const Table* table, const ReadOptions& options);
-  ~Iterator();
+  TableIterator(const Table* table, const ReadOptions& options);
+  ~TableIterator();
 
-  bool Valid() const;
-  Slice key() const;
-  Slice value() const;
+  bool Valid() const override;
+  Slice key() const override;
+  Slice value() const override;
 
-  void Seek(const Slice& target);
-  void SeekToFirst();
-  void SeekToLast();
-  void Next();
-  void Prev();
+  void Seek(const Slice& target) override;
+  void SeekToFirst() override;
+  void SeekToLast() override;
+  void Next() override;
+  void Prev() override;
 
-  Status status() const;
+  Status status() const override;
 
  private:
   void SetDataBlock();
@@ -109,8 +111,8 @@ class Table::Iterator {
 
   const Table* table_;
   ReadOptions options_;
-  std::unique_ptr<Block::Iterator> index_iter_;
-  std::unique_ptr<Block::Iterator> data_iter_;
+  std::unique_ptr<Iterator> index_iter_;
+  std::unique_ptr<Iterator> data_iter_;
   std::string data_block_key_;
   Status status_;
 };
