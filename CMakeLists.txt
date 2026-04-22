@@ -41,6 +41,9 @@ set(SRC_FILES
   src/memtable/memtable.cc
   src/memtable/immutable_memtable.cc
   src/wal/wal.cc
+  src/sstable/block.cc
+  src/sstable/table_builder.cc
+  src/sstable/table.cc
 )
 
 add_library(lsm STATIC ${SRC_FILES})
