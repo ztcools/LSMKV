@@ -1,6 +1,5 @@
 #pragma once
 
-#include <memory>
 #include <vector>
 #include "../util/slice.h"
 #include "../util/status.h"

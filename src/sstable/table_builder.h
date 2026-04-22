@@ -2,7 +2,6 @@
 
 #include <string>
 #include <fstream>
-#include <memory>
 #include "../util/slice.h"
 #include "../util/status.h"
 #include "block.h"

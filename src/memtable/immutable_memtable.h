@@ -1,10 +1,7 @@
 #pragma once
 
-#include <string>
 #include <memory>
-#include <mutex>
 #include "../util/slice.h"
-#include "../util/status.h"
 #include "memtable.h"
 
 namespace lsm {

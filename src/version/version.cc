@@ -4,7 +4,6 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
-#include <sstream>
 #include "../util/util.h"
 
 namespace lsm {
@@ -182,48 +181,7 @@ Status Version::Get(const ReadOptions& options, const Slice& key, std::string* v
   return Status::NotFound("Key not found");
 }
 
-// ========== TableCache ==========
-struct TableCache::LRUHandle {
-  uint64_t key;
-  std::shared_ptr<Table> table;
-  LRUHandle* next;
-  LRUHandle* prev;
-};
 
-TableCache::TableCache(const std::string& dbname, const Options& options, int /* entries */)
-    : dbname_(dbname), options_(options) {
-  // 简化实现：不使用完整的LRU，只做基础缓存
-  lru_ = nullptr;
-}
-
-TableCache::~TableCache() {
-  // 简化析构
-}
-
-Status TableCache::Get(const ReadOptions& options, uint64_t file_number, uint64_t file_size,
-                       const Slice& key, std::string* value) {
-  std::unique_ptr<Table> table;
-  Status s = FindTable(file_number, file_size, &table);
-  if (s.ok()) {
-    s = table->Get(options, key, value);
-  }
-  return s;
-}
-
-Status TableCache::FindTable(uint64_t file_number, uint64_t /* file_size */,
-                            std::unique_ptr<Table>* table) {
-  std::lock_guard<std::mutex> lock(mutex_);
-
-  // 简化：每次都打开新文件（不缓存）
-  // 实际工程中应该做LRU缓存
-  std::string filename = dbname_ + "/" + std::to_string(file_number) + ".sst";
-  return Table::Open(options_, filename, table);
-}
-
-void TableCache::Evict(uint64_t /* file_number */) {
-  std::lock_guard<std::mutex> lock(mutex_);
-  // 简化：这里不做实际的LRU缓存管理
-}
 
 // ========== VersionSet ==========
 // 文件名帮助函数

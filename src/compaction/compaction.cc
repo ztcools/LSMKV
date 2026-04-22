@@ -1,10 +1,8 @@
 #include "compaction.h"
-#include <algorithm>
+#include "merge_iterator.h"
 #include <cstdio>
 #include <cstdint>
-#include <fstream>
 #include <memory>
-#include "../util/util.h"
 
 namespace lsm {
 
@@ -99,7 +97,7 @@ Status CompactionBuilder::RunCompaction(Compaction* c, const std::string& dbname
 
   for (int level = 0; level < Version::kNumLevels; level++) {
     for (const auto& file : c->inputs(level)) {
-      std::unique_ptr<Table> table;
+      std::shared_ptr<Table> table;
       Status s = table_cache->FindTable(file->number, file->file_size, &table);
       if (!s.ok()) {
         return s;

@@ -5,10 +5,10 @@
 #include <mutex>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include "../util/slice.h"
 #include "../util/status.h"
 #include "../util/iterator.h"
+#include "../util/cache.h"
 #include "block.h"
 
 namespace lsm {
@@ -20,26 +20,7 @@ struct ReadOptions {
 
 class Block;
 
-// 简单的 Block 缓存（LRU）
-class BlockCache {
- public:
-  explicit BlockCache(size_t capacity);
-  ~BlockCache();
-
-  Block* Lookup(const std::string& key);
-  void Insert(const std::string& key, std::unique_ptr<Block> block);
-  void Erase(const std::string& key);
-  void Clear();
-
- private:
-  struct LRUElement;
-  std::unordered_map<std::string, std::unique_ptr<LRUElement>> cache_;
-  LRUElement* head_;
-  LRUElement* tail_;
-  size_t capacity_;
-  size_t usage_;
-  std::mutex mutex_;
-};
+class TableCache;
 
 // SSTable 读取器
 class Table {
@@ -69,7 +50,7 @@ class Table {
   Table(const Options& options, const std::string& filename,
         std::unique_ptr<FilterBlockReader> filter,
         std::unique_ptr<Block> index_block,
-        std::unique_ptr<BlockCache> cache);
+        std::shared_ptr<Cache> cache);
 
   Status ReadBlock(const ReadOptions& options, const BlockHandle& handle,
                        std::unique_ptr<Block>* block) const;
@@ -81,7 +62,7 @@ class Table {
   mutable std::fstream file_;
   std::unique_ptr<FilterBlockReader> filter_;
   std::unique_ptr<Block> index_block_;
-  mutable std::unique_ptr<BlockCache> cache_;
+  std::shared_ptr<Cache> cache_;
   mutable std::mutex mutex_;
   uint64_t file_size_;
 };

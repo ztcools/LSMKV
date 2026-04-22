@@ -37,6 +37,8 @@ set(SRC_FILES
   src/util/slice.cc
   src/util/arena.cc
   src/util/util.cc
+  src/util/cache.cc
+  src/util/bloom_filter.cc
   src/memtable/write_batch.cc
   src/memtable/memtable.cc
   src/memtable/immutable_memtable.cc
@@ -44,6 +46,7 @@ set(SRC_FILES
   src/sstable/block.cc
   src/sstable/table_builder.cc
   src/sstable/table.cc
+  src/sstable/table_cache.cc
   src/version/version.cc
   src/compaction/merge_iterator.cc
   src/compaction/compaction.cc

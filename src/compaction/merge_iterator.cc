@@ -1,5 +1,4 @@
 #include "merge_iterator.h"
-#include <algorithm>
 
 namespace lsm {
 

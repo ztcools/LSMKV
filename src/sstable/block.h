@@ -175,9 +175,8 @@ class FilterBlockWriter {
  private:
   void GenerateFilter();
   
-  std::string keys_;
+  std::vector<Slice> keys_;
   std::string result_;
-  std::vector<uint32_t> key_offsets_;
   std::vector<uint32_t> filter_offsets_;
   uint64_t last_block_offset_;
 };

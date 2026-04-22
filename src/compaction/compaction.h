@@ -4,12 +4,11 @@
 #include <set>
 #include <string>
 #include <vector>
-#include "../util/slice.h"
 #include "../util/status.h"
 #include "../sstable/block.h"
 #include "../sstable/table_builder.h"
+#include "../sstable/table_cache.h"
 #include "../version/version.h"
-#include "merge_iterator.h"
 
 namespace lsm {
 

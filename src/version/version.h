@@ -8,6 +8,7 @@
 #include <vector>
 #include "../sstable/block.h"
 #include "../sstable/table.h"
+#include "../sstable/table_cache.h"
 #include "../util/slice.h"
 #include "../util/status.h"
 
@@ -15,7 +16,6 @@ namespace lsm {
 
 class Version;
 class VersionSet;
-class TableCache;
 
 // FileMetaData：单个SSTable文件的元信息
 struct FileMetaData {
@@ -149,35 +149,6 @@ class Version {
 
  private:
   int refs_;
-};
-
-// TableCache：缓存打开的Table对象，避免重复打开文件
-class TableCache {
- public:
-  TableCache(const std::string& dbname, const Options& options, int entries);
-  ~TableCache();
-
-  TableCache(const TableCache&) = delete;
-  TableCache& operator=(const TableCache&) = delete;
-
-  // 返回指定文件编号的Table，可能来自缓存
-  Status Get(const ReadOptions& options, uint64_t file_number, uint64_t file_size,
-             const Slice& key, std::string* value);
-
-  // 查找并返回Table，缓存管理
-  Status FindTable(uint64_t file_number, uint64_t file_size,
-                  std::unique_ptr<Table>* table);
-
-  // 驱逐缓存
-  void Evict(uint64_t file_number);
-
- private:
-  struct LRUHandle;
-  LRUHandle* lru_;
-  std::mutex mutex_;
-
-  const std::string dbname_;
-  const Options options_;
 };
 
 // VersionSet：管理所有Version、持久化到Manifest

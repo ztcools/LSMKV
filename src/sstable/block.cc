@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cstring>
 #include "../util/util.h"
+#include "../util/bloom_filter.h"
 
 namespace lsm {
 
@@ -315,12 +316,11 @@ void FilterBlockWriter::StartBlock(uint64_t block_offset) {
 }
 
 void FilterBlockWriter::AddKey(const Slice& key) {
-  key_offsets_.push_back(keys_.size());
-  keys_.append(key.data(), key.size());
+  keys_.push_back(key);
 }
 
 Slice FilterBlockWriter::Finish() {
-  if (!key_offsets_.empty()) {
+  if (!keys_.empty()) {
     GenerateFilter();
   }
 
@@ -337,33 +337,27 @@ Slice FilterBlockWriter::Finish() {
 }
 
 void FilterBlockWriter::GenerateFilter() {
-  const size_t num_keys = key_offsets_.size();
+  const size_t num_keys = keys_.size();
   if (num_keys == 0) {
     filter_offsets_.push_back(result_.size());
     return;
   }
 
-  key_offsets_.push_back(keys_.size());
-
-  // TODO: 生成 BloomFilter 位图
-  // 这里简化处理，用简单的 hash 代替
-  for (size_t i = 0; i < num_keys; ++i) {
-    const char* base = keys_.data() + key_offsets_[i];
-    size_t len = key_offsets_[i + 1] - key_offsets_[i];
-    // 简单存储 key 的 hash 作为占位
-    uint32_t h = util::Hash(base, len, 0xbc9f1d34);
-    util::PutFixed32(&result_, h);
+  BloomFilter bloom(0.01, num_keys);
+  for (const auto& key : keys_) {
+    bloom.Add(key);
   }
+  std::string serialized = bloom.Serialize();
+  result_.append(serialized);
 
   filter_offsets_.push_back(result_.size());
-
   keys_.clear();
-  key_offsets_.clear();
 }
 
 // ========== FilterBlockReader ==========
 FilterBlockReader::FilterBlockReader(const Slice& contents)
     : data_(contents.data()),
+      size_(contents.size()),
       offset_(nullptr),
       num_(0),
       base_lg_(0) {
@@ -376,15 +370,16 @@ FilterBlockReader::FilterBlockReader(const Slice& contents)
   num_ = (n - 5 - last_word) / 4;
 }
 
-
-
 bool FilterBlockReader::KeyMayMatch(uint64_t block_offset, const Slice& key) {
-  (void)key;
   uint64_t index = block_offset >> base_lg_;
   if (index < num_) {
-    // TODO: 实际的 BloomFilter 检查
-    // 这里简化处理
-    return true;
+    uint32_t start = util::DecodeFixed32(offset_ + index * 4);
+    uint32_t limit = util::DecodeFixed32(offset_ + index * 4 + 4);
+    if (start < limit && limit <= static_cast<uint32_t>(size_ - 5)) {
+      Slice filter_data(data_ + start, limit - start);
+      BloomFilter bloom = BloomFilter::Deserialize(filter_data);
+      return bloom.MayContain(key);
+    }
   }
   return true;
 }
