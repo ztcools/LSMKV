@@ -2,12 +2,16 @@
 #include <cstring>
 #include "../util/util.h"
 #include "../util/cache.h"
+#include "../util/metrics.h"
 
 namespace lsm {
 
+// 全局指标
+extern Metrics* g_metrics;
+
 // ========== Table::Open ==========
 Status Table::Open(const Options& options, const std::string& filename,
-                   std::unique_ptr<Table>* table) {
+                   std::unique_ptr<Table>* table, std::shared_ptr<Cache> block_cache) {
   std::fstream file(filename, std::ios::in | std::ios::binary);
   if (!file.is_open()) {
     return Status::IOError("open sstable failed");
@@ -95,10 +99,8 @@ Status Table::Open(const Options& options, const std::string& filename,
     return s;
   }
 
-  auto cache = std::shared_ptr<Cache>(NewLRUCache(8 << 20));  // 默认 8MB 缓存
-
   table->reset(new Table(options, filename, std::move(filter),
-                         std::move(index_block), cache));
+                         std::move(index_block), block_cache));
   (*table)->file_ = std::move(file);
   (*table)->file_size_ = file_size;
 
@@ -149,8 +151,33 @@ Status Table::ReadRawBlock(const BlockHandle& handle, Slice* content,
   return Status::OK();
 }
 
-Status Table::ReadBlock(const ReadOptions& /* options */, const BlockHandle& handle,
+// Block 缓存的 deleter
+static void DeleteCachedBlock(const Slice& /*key*/, void* value) {
+  Block* block = reinterpret_cast<Block*>(value);
+  delete block;
+}
+
+Status Table::ReadBlock(const ReadOptions& options, const BlockHandle& handle,
                        std::unique_ptr<Block>* block) const {
+  // 构造缓存 key：filename + offset
+  std::string cache_key = filename_ + "@" + std::to_string(handle.offset);
+
+  // 先查找缓存
+  if (cache_) {
+    Cache::Handle* cache_handle = cache_->Lookup(cache_key);
+    if (cache_handle != nullptr) {
+      if (g_metrics) g_metrics->block_cache_hits.fetch_add(1);
+      // 找到缓存，直接复制一份
+      void* value = cache_handle->Value();
+      Block* cached_block = reinterpret_cast<Block*>(value);
+      *block = std::make_unique<Block>(*cached_block);  // 复制一份
+      cache_->Release(cache_handle);
+      return Status::OK();
+    }
+    if (g_metrics) g_metrics->block_cache_misses.fetch_add(1);
+  }
+
+  // 缓存未命中，从磁盘读取
   Slice contents;
   CompressionType type;
   Status s = ReadRawBlock(handle, &contents, &type);
@@ -160,7 +187,16 @@ Status Table::ReadBlock(const ReadOptions& /* options */, const BlockHandle& han
 
   auto b = std::make_unique<Block>(contents.data(), contents.size(),
                                     type != kNoCompression, type);
-  *block = std::move(b);
+  *block = std::make_unique<Block>(*b);  // 存一份到缓存
+
+  // 插入缓存
+  if (cache_ && options.fill_cache) {
+    Block* for_cache = new Block(*(*block));  // 复制一份用于缓存
+    Cache::Handle* cache_handle = cache_->Insert(
+        cache_key, for_cache, (*block)->ApproximateMemoryUsage(),
+        &DeleteCachedBlock);
+    cache_->Release(cache_handle);
+  }
 
   return Status::OK();
 }

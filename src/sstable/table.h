@@ -9,14 +9,10 @@
 #include "../util/status.h"
 #include "../util/iterator.h"
 #include "../util/cache.h"
+#include "../util/options.h"
 #include "block.h"
 
 namespace lsm {
-
-struct ReadOptions {
-  bool verify_checksums = false;
-  bool fill_cache = true;
-};
 
 class Block;
 
@@ -26,7 +22,7 @@ class TableCache;
 class Table {
  public:
   static Status Open(const Options& options, const std::string& filename,
-                     std::unique_ptr<Table>* table);
+                     std::unique_ptr<Table>* table, std::shared_ptr<Cache> block_cache = nullptr);
 
   ~Table();
 

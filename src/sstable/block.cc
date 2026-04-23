@@ -50,7 +50,8 @@ Status Footer::DecodeFrom(Slice* input) {
 // ========== Block ==========
 Block::Block(const char* data, size_t size, bool compressed, CompressionType type)
     : data_(data), size_(size), compressed_(compressed), compression_type_(type),
-      decompressed_(nullptr), decompressed_size_(0) {
+      decompressed_(nullptr), decompressed_size_(0),
+      owned_data_(false), owned_buf_(nullptr) {
   // 解压缩（如果需要）
   if (compressed_) {
     // TODO: 实际的解压缩代码
@@ -58,9 +59,30 @@ Block::Block(const char* data, size_t size, bool compressed, CompressionType typ
   }
 }
 
+Block::Block(const Block& other)
+    : size_(other.size_), compressed_(other.compressed_),
+      compression_type_(other.compression_type_),
+      decompressed_(nullptr), decompressed_size_(0),
+      owned_data_(true), owned_buf_(nullptr) {
+  // 复制数据
+  owned_buf_ = new char[other.size_];
+  memcpy(owned_buf_, other.data_, other.size_);
+  data_ = owned_buf_;
+
+  // 复制解压缩后的数据
+  if (other.decompressed_) {
+    decompressed_size_ = other.decompressed_size_;
+    decompressed_ = new char[decompressed_size_];
+    memcpy(decompressed_, other.decompressed_, decompressed_size_);
+  }
+}
+
 Block::~Block() {
   if (decompressed_) {
     delete[] decompressed_;
+  }
+  if (owned_buf_) {
+    delete[] owned_buf_;
   }
 }
 

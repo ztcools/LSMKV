@@ -5,6 +5,7 @@
 #include "../util/slice.h"
 #include "../util/status.h"
 #include "../util/arena.h"
+#include "../util/iterator.h"
 #include "skiplist.h"
 #include "write_batch.h"
 
@@ -30,19 +31,20 @@ class MemTable {
 
   size_t ApproximateMemoryUsage() const;
 
-  class Iterator {
+  class Iterator : public lsm::Iterator {
    public:
     explicit Iterator(const MemTable* table);
-    ~Iterator();
+    ~Iterator() override;
 
-    bool Valid() const;
-    Slice key() const;
-    Slice value() const;
-    void Next();
-    void Prev();
-    void Seek(const Slice& key);
-    void SeekToFirst();
-    void SeekToLast();
+    bool Valid() const override;
+    Slice key() const override;
+    Slice value() const override;
+    void Next() override;
+    void Prev() override;
+    void Seek(const Slice& key) override;
+    void SeekToFirst() override;
+    void SeekToLast() override;
+    Status status() const override { return Status::OK(); }
 
    private:
     SkipList<Slice, KeyComparator>::Iterator iter_;

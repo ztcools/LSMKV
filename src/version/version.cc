@@ -181,7 +181,21 @@ Status Version::Get(const ReadOptions& options, const Slice& key, std::string* v
   return Status::NotFound("Key not found");
 }
 
+std::vector<std::unique_ptr<Iterator>> Version::NewIterators(const ReadOptions& options, TableCache* table_cache) {
+  std::vector<std::unique_ptr<Iterator>> result;
 
+  for (int level = 0; level < kNumLevels; level++) {
+    for (const auto& f : files_[level]) {
+      std::unique_ptr<Iterator> it;
+      Status s = table_cache->NewIterator(options, f->number, f->file_size, &it);
+      if (s.ok() && it != nullptr) {
+        result.push_back(std::move(it));
+      }
+    }
+  }
+
+  return result;
+}
 
 // ========== VersionSet ==========
 // 文件名帮助函数

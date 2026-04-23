@@ -6,11 +6,11 @@
 #include <set>
 #include <string>
 #include <vector>
-#include "../sstable/block.h"
 #include "../sstable/table.h"
 #include "../sstable/table_cache.h"
 #include "../util/slice.h"
 #include "../util/status.h"
+#include "../util/options.h"
 
 namespace lsm {
 
@@ -132,9 +132,8 @@ class Version {
   // 查找key
   Status Get(const ReadOptions& options, const Slice& key, std::string* value);
 
-  // 迭代所有文件
-  class Iterator;
-  Iterator* NewIterator(const ReadOptions& options);
+  // 获取所有SSTable文件的Iterator
+  std::vector<std::unique_ptr<Iterator>> NewIterators(const ReadOptions& options, TableCache* table_cache);
 
   // VersionSet所属
   VersionSet* const vset_;

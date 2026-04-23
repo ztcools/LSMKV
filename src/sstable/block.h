@@ -7,25 +7,11 @@
 #include "../util/slice.h"
 #include "../util/status.h"
 #include "../util/iterator.h"
+#include "../util/options.h"
 
 namespace lsm {
 
 static const uint64_t kTableMagicNumber = 0x57fb088b46db80e8ULL;
-
-// 压缩类型
-enum CompressionType {
-  kNoCompression = 0x0,
-  kSnappyCompression = 0x1,
-  kLZ4Compression = 0x2,
-  kZSTDCompression = 0x3
-};
-
-// SSTable 通用选项
-struct Options {
-  size_t block_size = 4096;        // Block 大小
-  size_t block_restart_interval = 16;  // 前缀压缩 restart 间隔
-  CompressionType compression = kNoCompression;  // 压缩类型
-};
 
 // Block句柄（位置 + 大小）
 struct BlockHandle {
@@ -57,19 +43,26 @@ struct Footer {
 // 数据块
 class Block {
  public:
-  // 注意：Block 不会持有 data 的所有权
-  // data 必须比 Block 生命周期更长
+  // 注意：如果 compressed 为 false，Block 不会持有 data 的所有权
+  // 如果 compressed 为 true，会复制并解压
   Block(const char* data, size_t size, bool compressed = false,
         CompressionType type = kNoCompression);
 
-  // 禁止拷贝
-  Block(const Block&) = delete;
-  Block& operator=(const Block&) = delete;
+  // 支持拷贝（用于缓存）
+  Block(const Block& other);
+  Block& operator=(const Block& other) = delete;
 
   ~Block();
 
   const char* data() const { return data_; }
   size_t size() const { return size_; }
+
+  size_t ApproximateMemoryUsage() const {
+    size_t usage = sizeof(*this) + size_;
+    if (decompressed_) usage += decompressed_size_;
+    if (owned_data_) usage += size_;  // 如果自己持有数据，再加一份
+    return usage;
+  }
 
   // 迭代器
   std::unique_ptr<Iterator> NewIterator();
@@ -86,6 +79,8 @@ class Block {
   CompressionType compression_type_;
   char* decompressed_;
   size_t decompressed_size_;
+  bool owned_data_;  // 是否自己持有数据的所有权
+  char* owned_buf_;  // 自己持有的数据缓冲区
 };
 
 // Block迭代器

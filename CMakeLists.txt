@@ -39,6 +39,8 @@ set(SRC_FILES
   src/util/util.cc
   src/util/cache.cc
   src/util/bloom_filter.cc
+  src/util/options.cc
+  src/util/metrics.cc
   src/memtable/write_batch.cc
   src/memtable/memtable.cc
   src/memtable/immutable_memtable.cc
@@ -50,6 +52,7 @@ set(SRC_FILES
   src/version/version.cc
   src/compaction/merge_iterator.cc
   src/compaction/compaction.cc
+  src/db.cc
 )
 
 add_library(lsm STATIC ${SRC_FILES})
@@ -60,3 +63,20 @@ target_include_directories(lsm
 )
 
 target_link_libraries(lsm PUBLIC Threads::Threads)
+
+# 工具程序
+add_executable(sst_dump tools/sst_dump.cc)
+target_link_libraries(sst_dump lsm)
+
+add_executable(manifest_dump tools/manifest_dump.cc)
+target_link_libraries(manifest_dump lsm)
+
+add_executable(db_bench tools/db_bench.cc)
+target_link_libraries(db_bench lsm)
+
+# 测试程序
+add_executable(simple_test test/simple_test.cc)
+target_link_libraries(simple_test lsm)
+
+add_executable(minimal_test test/minimal_test.cc)
+target_link_libraries(minimal_test lsm)

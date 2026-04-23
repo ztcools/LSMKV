@@ -18,16 +18,15 @@ int MemTable::KeyComparator::operator()(const Slice& a, const Slice& b) const {
 
 static const char* EncodeKey(std::string* scratch, const Slice& target) {
   scratch->clear();
-  util::PutLengthPrefixedSlice(scratch, target);
+  // Just encode varint32(target.size) + target for seek
+  size_t len = util::VarintLength(target.size()) + target.size();
+  scratch->resize(len);
+  char* p = util::EncodeVarint32(&(*scratch)[0], target.size());
+  memcpy(p, target.data(), target.size());
   return scratch->c_str();
 }
 
-static Slice GetLengthPrefixedSlice(const char* data) {
-  uint32_t len;
-  const char* p = data;
-  p = util::DecodeVarint32(p, p + 5, &len);
-  return Slice(p, len);
-}
+
 
 MemTable::MemTable()
     : table_(&arena_, KeyComparator()),
@@ -44,16 +43,21 @@ void MemTable::Put(const Slice& key, const Slice& value) {
   std::lock_guard<std::mutex> lock(mutex_);
   size_t key_size = key.size();
   size_t val_size = value.size();
-  size_t internal_key_size = key_size + val_size + 8;
-  const size_t encoded_len = util::VarintLength(internal_key_size) +
-                             internal_key_size;
+  
+  // Simplified encoding:
+  // [varint32(key_size)] [key (key_size bytes)] [type (1 byte, 1)] 
+  // [varint32(val_size)] [val (val_size bytes)]
+  size_t encoded_len = util::VarintLength(key_size) + key_size + 1 + 
+                       util::VarintLength(val_size) + val_size;
   char* buf = arena_.Allocate(encoded_len);
-  char* p = util::EncodeVarint32(buf, internal_key_size);
+  char* p = util::EncodeVarint32(buf, key_size);
   memcpy(p, key.data(), key_size);
   p += key_size;
-  util::EncodeFixed32(p, kTypeValue);
-  p += 4;
+  *p = 1; // type 1 = value
+  p +=1;
+  p = util::EncodeVarint32(p, val_size);
   memcpy(p, value.data(), val_size);
+  
   table_.Insert(Slice(buf, encoded_len));
   memory_usage_ += encoded_len;
 }
@@ -61,14 +65,16 @@ void MemTable::Put(const Slice& key, const Slice& value) {
 void MemTable::Delete(const Slice& key) {
   std::lock_guard<std::mutex> lock(mutex_);
   size_t key_size = key.size();
-  size_t internal_key_size = key_size + 4;
-  const size_t encoded_len = util::VarintLength(internal_key_size) +
-                             internal_key_size;
+  
+  // Simplified encoding for deletion:
+  // [varint32(key_size)] [key (key_size bytes)] [type (1 byte, 0)]
+  size_t encoded_len = util::VarintLength(key_size) + key_size +1;
   char* buf = arena_.Allocate(encoded_len);
-  char* p = util::EncodeVarint32(buf, internal_key_size);
+  char* p = util::EncodeVarint32(buf, key_size);
   memcpy(p, key.data(), key_size);
   p += key_size;
-  util::EncodeFixed32(p, kTypeDeletion);
+  *p =0; // type0 = deletion
+  
   table_.Insert(Slice(buf, encoded_len));
   memory_usage_ += encoded_len;
 }
@@ -93,29 +99,41 @@ void MemTable::Write(const WriteBatch& batch) {
 
 bool MemTable::Get(const Slice& key, std::string* value) const {
   std::lock_guard<std::mutex> lock(mutex_);
+
   std::string tmp;
-  const char* memkey = EncodeKey(&tmp, key);
   SkipList<Slice, KeyComparator>::Iterator iter(&table_);
-  iter.Seek(memkey);
-  if (iter.Valid()) {
+  iter.Seek(EncodeKey(&tmp, key));
+  
+  while (iter.Valid()) {
     Slice entry = iter.key();
-    uint32_t key_length;
-    const char* key_ptr = util::DecodeVarint32(entry.data(), entry.data() + 5, &key_length);
-    Slice user_key(key_ptr, key_length - 4);
-    if (user_key == key) {
-      const char* p = key_ptr + key_length - 4;
-      uint32_t tag = util::DecodeFixed32(p);
-      p += 4;
-      switch (tag) {
-        case kTypeValue: {
-          Slice v = GetLengthPrefixedSlice(p);
-          value->assign(v.data(), v.size());
-          return true;
-        }
-        case kTypeDeletion:
-          return false;
-      }
+    const char* p = entry.data();
+    const char* limit = entry.data() + entry.size();
+    
+    // Decode key length and key
+    uint32_t key_len;
+    p = util::DecodeVarint32(p, limit, &key_len);
+    Slice entry_key(p, key_len);
+    p += key_len;
+    
+    if (entry_key != key) {
+      // since keys are sorted, we can break
+      break;
     }
+    
+    // Get type
+    uint8_t type = *p;
+    p++;
+    if (type == 0) {
+      return false; // deletion
+    } else if (type == 1) {
+      // Decode value
+      uint32_t val_len;
+      p = util::DecodeVarint32(p, limit, &val_len);
+      value->assign(p, val_len);
+      return true;
+    }
+    
+    iter.Next();
   }
   return false;
 }
@@ -130,17 +148,32 @@ bool MemTable::Iterator::Valid() const {
 }
 
 Slice MemTable::Iterator::key() const {
-  Slice key = iter_.key();
-  uint32_t key_length;
-  const char* key_ptr = util::DecodeVarint32(key.data(), key.data() + 5, &key_length);
-  return Slice(key_ptr, key_length - 4);
+  Slice entry = iter_.key();
+  const char* p = entry.data();
+  const char* limit = entry.data() + entry.size();
+  
+  uint32_t key_len;
+  p = util::DecodeVarint32(p, limit, &key_len);
+  return Slice(p, key_len);
 }
 
 Slice MemTable::Iterator::value() const {
-  Slice key = iter_.key();
-  uint32_t key_length;
-  const char* key_ptr = util::DecodeVarint32(key.data(), key.data() + 5, &key_length);
-  return GetLengthPrefixedSlice(key_ptr + key_length);
+  Slice entry = iter_.key();
+  const char* p = entry.data();
+  const char* limit = entry.data() + entry.size();
+  
+  // skip key
+  uint32_t key_len;
+  p = util::DecodeVarint32(p, limit, &key_len);
+  p += key_len;
+  
+  // skip type byte
+  p += 1;
+  
+  // get value
+  uint32_t val_len;
+  p = util::DecodeVarint32(p, limit, &val_len);
+  return Slice(p, val_len);
 }
 
 void MemTable::Iterator::Next() { iter_.Next(); }
