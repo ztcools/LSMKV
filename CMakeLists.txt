@@ -60,6 +60,7 @@ add_library(lsm STATIC ${SRC_FILES})
 target_include_directories(lsm
   PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
 
 target_link_libraries(lsm PUBLIC Threads::Threads)
