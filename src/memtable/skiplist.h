@@ -3,9 +3,7 @@
 #include <atomic>
 #include <random>
 #include <cassert>
-#include <cstdint>
 #include <cstring>
-#include "../util/slice.h"
 #include "../util/arena.h"
 
 namespace lsm {

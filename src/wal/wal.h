@@ -3,7 +3,6 @@
 #include <string>
 #include <fstream>
 #include <mutex>
-#include "../util/slice.h"
 #include "../util/status.h"
 #include "../memtable/write_batch.h"
 

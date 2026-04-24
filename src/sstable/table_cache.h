@@ -8,7 +8,6 @@
 #include "../util/status.h"
 #include "../util/cache.h"
 #include "table.h"
-#include "block.h"
 
 namespace lsm {
 

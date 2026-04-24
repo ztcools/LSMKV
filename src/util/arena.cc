@@ -1,5 +1,5 @@
 #include "arena.h"
-#include <algorithm>
+#include <cstdint>  // 包含 uintptr_t
 
 namespace lsm {
 

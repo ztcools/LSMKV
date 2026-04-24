@@ -3,7 +3,6 @@
 #include <cstddef>
 #include <vector>
 #include <cassert>
-#include <cstdint>
 
 namespace lsm {
 
